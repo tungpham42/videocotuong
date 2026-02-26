@@ -6,12 +6,9 @@
     <title>Trình phát Video Cờ Thế Xiangqi & AI</title>
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
-    <link
-      rel="stylesheet"
-      href="https://unpkg.com/@chrisoakman/xiangqiboard@0.3.3/dist/xiangqiboard.min.css"
-    />
-
+    <link rel="stylesheet" href="xiangqiboard.css" />
     <link
       rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/antd/4.24.15/antd.min.css"
@@ -63,10 +60,45 @@
         white-space: pre-wrap;
         line-height: 1.5;
       }
-      /* Hiệu ứng bôi màu ô cờ vừa di chuyển */
       .highlight-square {
         box-shadow: inset 0 0 0 3px rgba(255, 255, 0, 0.8) !important;
         background-color: rgba(255, 255, 0, 0.4) !important;
+      }
+      #movesInput {
+        font-family: "Courier New", Courier, monospace;
+        font-size: 14px;
+        line-height: 1.6;
+        padding: 12px;
+        background-color: #fbfbfb;
+        border-radius: 6px;
+        border: 1px solid #d9d9d9;
+        resize: vertical;
+        min-height: 80px;
+        max-height: 150px;
+        overflow-y: auto;
+        box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.02);
+        transition: all 0.3s;
+        word-spacing: 5px;
+      }
+      #movesInput:focus {
+        background-color: #fff;
+        border-color: #40a9ff;
+        box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+        outline: none;
+      }
+      #movesInput::-webkit-scrollbar {
+        width: 8px;
+      }
+      #movesInput::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 4px;
+      }
+      #movesInput::-webkit-scrollbar-thumb {
+        background: #c1c1c1;
+        border-radius: 4px;
+      }
+      #movesInput::-webkit-scrollbar-thumb:hover {
+        background: #a8a8a8;
       }
     </style>
   </head>
@@ -80,12 +112,53 @@
       <div class="control-section">
         <h3 class="ant-typography">Điều khiển Video Ván Cờ</h3>
 
-        <div>
-          <label
-            ><strong
-              >Nhập danh sách nước đi (UCCI hoặc PGN tĩnh):</strong
-            ></label
+        <div style="margin-bottom: 5px">
+          <label><strong>Mã FEN (Dành cho Cờ Thế):</strong></label>
+          <div style="display: flex; gap: 8px; margin-top: 5px">
+            <input
+              type="text"
+              id="fenInput"
+              class="ant-input"
+              placeholder="Nhập FEN cờ thế (bỏ trống nếu đánh từ đầu)"
+            />
+            <button class="ant-btn ant-btn-default" onclick="loadFen()">
+              Thiết lập
+            </button>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 15px">
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 8px;
+            "
           >
+            <label><strong>Danh sách nước đi (UCCI):</strong></label>
+            <div>
+              <button
+                class="ant-btn ant-btn-sm"
+                style="
+                  background-color: #722ed1;
+                  color: white;
+                  border-color: #722ed1;
+                  margin-right: 5px;
+                "
+                onclick="generateMovesWithAI()"
+              >
+                🤖 AI Giải Cờ
+              </button>
+              <button
+                class="ant-btn ant-btn-sm"
+                id="copyBtn"
+                onclick="copyMoves()"
+              >
+                📋 Copy tất cả
+              </button>
+            </div>
+          </div>
           <textarea
             id="movesInput"
             class="ant-input"
@@ -94,13 +167,30 @@
           ></textarea>
         </div>
 
-        <div style="display: flex; gap: 10px">
+        <div style="display: flex; gap: 10px; flex-wrap: wrap">
           <button class="ant-btn ant-btn-primary" onclick="playVideo()">
             ▶ Phát Video
           </button>
           <button class="ant-btn" onclick="pauseVideo()">⏸ Tạm dừng</button>
           <button class="ant-btn ant-btn-dashed" onclick="resetBoard()">
             🔄 Đặt lại
+          </button>
+        </div>
+
+        <div style="margin-top: 10px">
+          <button
+            id="btnExportVideo"
+            class="ant-btn"
+            style="
+              background-color: #ff4d4f;
+              color: white;
+              border-color: #ff4d4f;
+              width: 100%;
+              font-weight: bold;
+            "
+            onclick="exportVideo()"
+          >
+            🎬 Xuất Video Shorts (1080x1920)
           </button>
         </div>
 
@@ -122,37 +212,94 @@
       </div>
     </div>
 
-    <script src="https://unpkg.com/@chrisoakman/xiangqiboard@0.3.3/dist/xiangqiboard.min.js"></script>
-
+    <script src="xiangqiboard.min.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/lengyanyu258/xiangqi.js/xiangqi.js"></script>
 
     <script>
-      // --- KHỞI TẠO BÀN CỜ VÀ LÕI LUẬT CỜ ---
       let board = null;
       let timer = null;
       let currentMoveIndex = 0;
       let movesArray = [];
+      let startFen = "start";
 
-      // Khởi tạo engine luật cờ (Cần thư viện xiangqi.js tải thành công)
+      // Bảng từ điển dịch ký hiệu quân cờ sang tiếng Việt
+      const pieceNamesVN = {
+        p: "Chốt",
+        r: "Xe",
+        n: "Mã",
+        b: "Tượng",
+        a: "Sĩ",
+        c: "Pháo",
+        k: "Tướng",
+      };
+
       const game = typeof Xiangqi !== "undefined" ? new Xiangqi() : null;
-      if (!game) {
-        alert(
-          "Lỗi: Không thể tải thư viện xiangqi.js. Các chức năng kiểm tra luật sẽ không hoạt động!",
-        );
+      if (!game) alert("Lỗi: Không thể tải thư viện xiangqi.js!");
+
+      function loadFen() {
+        const fen = document.getElementById("fenInput").value.trim();
+        if (fen) {
+          const isValid = game.load(fen);
+          if (isValid) {
+            startFen = fen;
+            board.position(fen);
+            document.getElementById("movesInput").value = "";
+            movesArray = [];
+            currentMoveIndex = 0;
+            removeHighlights();
+            alert("Đã thiết lập Cờ Thế thành công!");
+          } else {
+            alert("Mã FEN không hợp lệ! Vui lòng kiểm tra lại.");
+          }
+        } else {
+          startFen = "start";
+          game.reset();
+          board.start();
+        }
+      }
+
+      function onDragStart(source, piece, position, orientation) {
+        if (!game || game.game_over()) return false;
+        if (
+          (game.turn() === "r" && piece.search(/^b/) !== -1) ||
+          (game.turn() === "b" && piece.search(/^r/) !== -1)
+        ) {
+          return false;
+        }
+      }
+
+      function onDrop(source, target) {
+        if (!game) return "snapback";
+        const moveDetails = game.move({ from: source, to: target });
+        if (moveDetails === null) return "snapback";
+
+        const moveStr = source + "-" + target;
+        const movesInput = document.getElementById("movesInput");
+        const currentText = movesInput.value.trim();
+        movesInput.value = currentText ? currentText + " " + moveStr : moveStr;
+
+        movesArray = parseMoves();
+        currentMoveIndex = movesArray.length;
+        highlightMove(source, target);
+        movesInput.scrollTop = movesInput.scrollHeight;
+      }
+
+      function onSnapEnd() {
+        if (game) board.position(game.fen());
       }
 
       const boardConfig = {
         position: "start",
         showNotation: true,
-        pieceTheme:
-          "https://unpkg.com/@chrisoakman/xiangqiboard@0.3.3/dist/img/xiangqipieces/wikipedia/{piece}.png",
-        draggable: false, // Tắt kéo thả vì đây là trình phát video
+        pieceTheme: "img/xiangqipieces/traditional/{piece}.svg",
+        draggable: true,
+        onDragStart: onDragStart,
+        onDrop: onDrop,
+        onSnapEnd: onSnapEnd,
       };
 
-      // Khởi tạo giao diện
       board = Xiangqiboard("myBoard", boardConfig);
 
-      // --- HÀM TRỢ GIÚP: BÔI MÀU NƯỚC ĐI ---
       function removeHighlights() {
         $('#myBoard [class^="square-"]').removeClass("highlight-square");
       }
@@ -163,7 +310,6 @@
         $("#myBoard .square-" + toSquare).addClass("highlight-square");
       }
 
-      // --- LOGIC ĐIỀU KHIỂN VIDEO ---
       function parseMoves() {
         const inputText = document.getElementById("movesInput").value.trim();
         if (!inputText) return [];
@@ -181,24 +327,19 @@
         }
 
         timer = setInterval(() => {
-          // Kiểm tra xem đã đi hết danh sách chưa
           if (currentMoveIndex >= movesArray.length) {
             clearInterval(timer);
-            if (game.in_checkmate()) {
-              alert("Đã phát xong! Kết quả: Chiếu bí (Checkmate).");
-            } else if (game.in_draw()) {
-              alert("Đã phát xong! Kết quả: Cờ hòa.");
-            } else {
-              alert("Đã phát xong toàn bộ nước đi!");
-            }
             return;
           }
 
           const moveStr = movesArray[currentMoveIndex];
+          let moveObj = moveStr;
+          if (moveStr.includes("-")) {
+            const parts = moveStr.split("-");
+            moveObj = { from: parts[0], to: parts[1] };
+          }
 
-          // Engine xử lý nước đi
-          const moveDetails = game.move(moveStr, { sloppy: true });
-
+          const moveDetails = game.move(moveObj, { sloppy: true });
           if (moveDetails === null) {
             clearInterval(timer);
             alert(
@@ -207,18 +348,10 @@
             return;
           }
 
-          // Cập nhật giao diện bàn cờ bằng mã FEN chuẩn
           board.position(game.fen());
-
-          // Highlight ô cờ vừa đi
           highlightMove(moveDetails.from, moveDetails.to);
-
-          if (game.in_check()) {
-            console.log("Cảnh báo: Đang chiếu tướng!");
-          }
-
           currentMoveIndex++;
-        }, 1000); // Tốc độ phát video: 1 giây/nước
+        }, 1000);
       }
 
       function pauseVideo() {
@@ -227,60 +360,247 @@
 
       function resetBoard() {
         if (timer) clearInterval(timer);
-        if (game) game.reset();
-        board.start();
+        if (startFen === "start") {
+          if (game) game.reset();
+          board.start();
+        } else {
+          game.load(startFen);
+          board.position(startFen);
+        }
         removeHighlights();
         currentMoveIndex = 0;
+        document.getElementById("movesInput").value = "";
         document.getElementById("aiResult").innerText =
           "Chưa có dữ liệu phân tích...";
       }
 
-      // --- LOGIC GỌI GROQ API ---
+      function copyMoves() {
+        const textToCopy = document.getElementById("movesInput").value.trim();
+        if (!textToCopy) return alert("Chưa có nước đi nào để copy!");
+        navigator.clipboard.writeText(textToCopy).then(() => {
+          const copyBtn = document.getElementById("copyBtn");
+          const originalText = copyBtn.innerHTML;
+          copyBtn.innerHTML = "✅ Đã Copy!";
+          setTimeout(() => (copyBtn.innerHTML = originalText), 2000);
+        });
+      }
+
       async function analyzeWithAI() {
         if (!game) return;
-
         const resultBox = document.getElementById("aiResult");
-        const currentFen = game.fen(); // Mã FEN chuẩn xác vị trí
-
-        if (currentMoveIndex === 0 && currentFen.includes("start")) {
-          resultBox.innerHTML =
-            "<span style='color: orange;'>Ván cờ chưa bắt đầu. Hãy phát video một vài nước trước khi nhờ AI phân tích.</span>";
-          return;
-        }
-
-        // Xây dựng Prompt
+        const currentFen = game.fen();
         const historyMoves = movesArray.slice(0, currentMoveIndex).join(" ");
-        const promptContent = `Tôi đang xem một ván cờ tướng. Thế cờ hiện tại dưới dạng chuỗi FEN là: "${currentFen}". 
-Lịch sử các nước đi từ đầu ván đến giờ là: ${historyMoves || "Chưa có"}. 
-Dựa vào thông tin trên, hãy đóng vai một Đại kiện tướng cờ tướng, phân tích ngắn gọn thế trận hiện tại (ưu/nhược điểm của hai bên) và gợi ý 1-2 nước đi tiếp theo tốt nhất. Trình bày rõ ràng và dễ hiểu.`;
+        const promptContent = `Tôi đang xem một ván cờ tướng. Thế cờ hiện tại dưới dạng chuỗi FEN là: "${currentFen}". Lịch sử các nước đi là: ${historyMoves || "Chưa có"}. Hãy đóng vai một Đại kiện tướng cờ tướng, phân tích ngắn gọn thế trận hiện tại và gợi ý 1-2 nước đi tiếp theo tốt nhất.`;
 
-        resultBox.innerHTML =
-          "<em>Đang chờ Groq AI (Đại kiện tướng) phân tích... (Có thể mất vài giây)</em>";
+        resultBox.innerHTML = "<em>Đang chờ Groq AI phân tích...</em>";
 
         try {
-          // Gọi tới Endpoint của Groq API
           const response = await fetch(
             "https://groqprompt.netlify.app/api/ai",
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ prompt: promptContent }), // Input theo chuẩn: { "prompt": "..." }
+              body: JSON.stringify({ prompt: promptContent }),
+            },
+          );
+          const data = await response.json();
+          resultBox.innerText =
+            data?.result || "Không nhận được kết quả hợp lệ.";
+        } catch (error) {
+          resultBox.innerHTML = `<span style='color: red;'>Lỗi kết nối API: ${error.message}</span>`;
+        }
+      }
+
+      async function generateMovesWithAI() {
+        if (!game) return;
+
+        const fenToSolve = startFen !== "start" ? startFen : game.fen();
+        const resultBox = document.getElementById("aiResult");
+        const movesInput = document.getElementById("movesInput");
+
+        resultBox.innerHTML =
+          "<em style='color: #722ed1;'>Đang yêu cầu Groq AI giải cờ và tạo chuỗi nước đi... (Vui lòng đợi vài giây)</em>";
+
+        const promptContent = `Tôi có một thế cờ tướng (hoặc ván cờ) với mã FEN: "${fenToSolve}". 
+Hãy đóng vai một Đại kiện tướng cờ tướng và giải thế cờ này (đánh đến khi chiếu bí hoặc ưu thế tuyệt đối).
+YÊU CẦU QUAN TRỌNG NHẤT: BẠN CHỈ ĐƯỢC PHÉP TRẢ VỀ MỘT CHUỖI CÁC NƯỚC ĐI THEO ĐỊNH DẠNG UCCI (ví dụ: h2-e2 h9-g7 i9-h9). 
+Không giải thích, không dùng tiếng Việt, không chào hỏi. Chỉ in ra các nước đi UCCI cách nhau bởi một khoảng trắng.`;
+
+        try {
+          const response = await fetch(
+            "https://groqprompt.netlify.app/api/ai",
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ prompt: promptContent }),
             },
           );
 
           if (!response.ok) throw new Error(`Lỗi HTTP: ${response.status}`);
-
           const data = await response.json();
 
-          // Output theo chuẩn: result
           if (data && data.result) {
-            resultBox.innerText = data.result;
+            const ucciRegex = /[a-i][0-9]-[a-i][0-9]/g;
+            const matches = data.result.match(ucciRegex);
+
+            if (matches && matches.length > 0) {
+              movesInput.value = matches.join(" ");
+              resultBox.innerHTML = `
+                <span style='color: #52c41a; font-weight: bold;'>✅ AI đã tạo thành công danh sách nước đi!</span><br/>
+                <span>Hãy bấm <strong>"▶ Phát Video"</strong> để kiểm tra nước đi, hoặc <strong>"🎬 Xuất Video Shorts"</strong> để lưu ngay.</span>
+                <hr style="margin: 10px 0; border-top: 1px dashed #d9d9d9;" />
+                <span style="font-size: 12px; color: #888;">Log phản hồi gốc từ AI: ${data.result}</span>
+              `;
+            } else {
+              resultBox.innerHTML = `<span style='color: orange;'>⚠️ AI đã phản hồi, nhưng không tìm thấy định dạng UCCI hợp lệ nào. Phản hồi gốc:</span><br/>${data.result}`;
+            }
           } else {
             resultBox.innerText = "Không nhận được kết quả hợp lệ từ AI.";
           }
         } catch (error) {
-          console.error("Lỗi:", error);
           resultBox.innerHTML = `<span style='color: red;'>Lỗi kết nối API: ${error.message}</span>`;
+        }
+      }
+
+      async function exportVideo() {
+        const movesText = document.getElementById("movesInput").value.trim();
+        if (!movesText) {
+          alert("Vui lòng nhập nước đi để xuất video!");
+          return;
+        }
+
+        const btn = document.getElementById("btnExportVideo");
+        const originalBtnText = btn.innerHTML;
+        btn.innerHTML = "⏳ Đang quay video, vui lòng đợi...";
+        btn.disabled = true;
+
+        pauseVideo();
+        movesArray = parseMoves();
+
+        if (startFen === "start") {
+          if (game) game.reset();
+          board.start();
+        } else {
+          game.load(startFen);
+          board.position(startFen);
+        }
+        removeHighlights();
+
+        const canvas = document.createElement("canvas");
+        canvas.width = 1080;
+        canvas.height = 1920;
+        const ctx = canvas.getContext("2d");
+
+        const stream = canvas.captureStream(30);
+        const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
+          ? "video/webm;codecs=vp9"
+          : "video/webm";
+        const recorder = new MediaRecorder(stream, { mimeType });
+        const chunks = [];
+
+        recorder.ondataavailable = (e) => {
+          if (e.data.size > 0) chunks.push(e.data);
+        };
+        recorder.onstop = () => {
+          const blob = new Blob(chunks, { type: "video/webm" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "VanCoThe_Short.webm";
+          a.click();
+          URL.revokeObjectURL(url);
+          btn.innerHTML = originalBtnText;
+          btn.disabled = false;
+          alert("Đã xuất video thành công!");
+        };
+
+        recorder.start();
+
+        // THÊM: Truyền thông báo ăn quân vào hàm vẽ Frame
+        async function drawFrame(stepIndex = 0, captureMsg = "") {
+          const boardEl = document.getElementById("myBoard");
+          const boardCanvas = await html2canvas(boardEl, {
+            backgroundColor: null,
+            scale: 2,
+          });
+
+          const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+          gradient.addColorStop(0, "#141E30");
+          gradient.addColorStop(1, "#243B55");
+          ctx.fillStyle = gradient;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          ctx.fillStyle = "#ffffff";
+          ctx.font = "bold 75px Arial";
+          ctx.textAlign = "center";
+          ctx.fillText("GIẢI MÃ CỜ THẾ", canvas.width / 2, 350);
+
+          const scaleW = 960 / boardCanvas.width;
+          const drawW = boardCanvas.width * scaleW;
+          const drawH = boardCanvas.height * scaleW;
+          const x = (canvas.width - drawW) / 2;
+          const y = (canvas.height - drawH) / 2;
+          ctx.drawImage(boardCanvas, x, y, drawW, drawH);
+
+          // Render số nước đi
+          ctx.fillStyle = "#f39c12";
+          ctx.font = "50px Arial";
+          ctx.fillText(
+            `Nước đi: ${stepIndex} / ${movesArray.length}`,
+            canvas.width / 2,
+            y + drawH + 120,
+          );
+
+          // Render thông báo ăn quân (nếu có)
+          if (captureMsg) {
+            ctx.fillStyle = "#ff4d4f"; // Màu đỏ nhạt cho nổi bật
+            ctx.font = "bold 60px Arial";
+            ctx.fillText(captureMsg, canvas.width / 2, y + drawH + 220);
+          }
+        }
+
+        try {
+          await drawFrame(0, "");
+          await new Promise((r) => setTimeout(r, 1000));
+
+          for (let i = 0; i < movesArray.length; i++) {
+            const moveStr = movesArray[i];
+            let moveObj = moveStr.includes("-")
+              ? { from: moveStr.split("-")[0], to: moveStr.split("-")[1] }
+              : moveStr;
+
+            const moveDetails = game.move(moveObj, { sloppy: true });
+            if (moveDetails === null) {
+              console.warn(
+                `Lỗi: Nước đi không hợp lệ (${moveStr}) tại bước ${i + 1}`,
+              );
+              break;
+            }
+
+            // Xử lý thông báo nếu có quân bị ăn
+            let currentCaptureMsg = "";
+            if (moveDetails.captured) {
+              const movingColor = moveDetails.color === "r" ? "Đỏ" : "Đen";
+              const pieceName =
+                pieceNamesVN[moveDetails.captured.toLowerCase()] || "Quân";
+              currentCaptureMsg = `⚔️ ${movingColor} ăn ${pieceName}!`;
+            }
+
+            board.position(game.fen());
+            highlightMove(moveDetails.from, moveDetails.to);
+
+            await new Promise((r) => setTimeout(r, 300));
+            await drawFrame(i + 1, currentCaptureMsg); // Vẽ frame có kèm text ăn quân
+            await new Promise((r) => setTimeout(r, 700));
+          }
+
+          await new Promise((r) => setTimeout(r, 2000));
+          recorder.stop();
+        } catch (error) {
+          console.error("Lỗi xuất video:", error);
+          alert("Có lỗi xảy ra trong quá trình xuất video!");
+          btn.innerHTML = originalBtnText;
+          btn.disabled = false;
         }
       }
     </script>
